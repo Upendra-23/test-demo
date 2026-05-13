@@ -1,0 +1,1412 @@
+Elastic stack
+	
+The Elastic stack is a group of open source products build by elastic
+1. Elastic Search
+2. Kibana
+3. Logstash
+4. Beats06:17 PM 06-07-2025
+5. X-Pack
+
+Elastic Search
+
+1. Open source and full text-search engine
+2. Its built in java
+3. Easy to use and highly scalable
+4. Often used to provide search functionality to an application with features like auto completing, correcting typos, handling synonyms.
+
+Kibana
+
+1. Dashboard for analyzing and visualisation
+
+Logstash
+
+1. process logs from application and send them to elastic search. Nut over time it has evolved
+2. Logstash is a free and open server-side data processing pipeline that ingests data from multitude of sources, transforms it, and then sends it to your favourite "stash"  (Kafka/Elasticsearch)
+
+X-Pack
+
+Adds additional features to the Elasticsearch & Kibana
+1. Security: Adds Authentication and Authorisation
+2. Monitors the performance of elastic stack and get notified
+3. Enables machine learning on Kibana and elastic search
+4. Graph -> Analyse relationship / relevance in data useful for    recommendations. It exposes an API that we can integrate in our   applications.
+5. Elasticsearch SQL
+ a. SQL API: SQL query -> Result
+ b. Translate API: SQL query -> Query DSL (Domain Specific Language)
+
+Beats
+
+Beats is a collection of data shippers. They are light weight agents which send data from hundreds or thousands of machines and systems (we will install these agents on servers) to Logstash or Elasticsearch
+
+Different kinds of beat do different kind of tasks.
+
+1. Centre is elastic search where all data is present
+2. we can put the data into elastic search via beats or Logstash or even directly through elastic search APIs.
+3. Kibana is UI that sits on elastic search and visualise elastic search's data.
+4. ELK is subset of Elastic Stack.
+
+#############################################################################################################################################################
+
+node - elastic search instance
+cluster - collection of elastic search instances/nodes
+multiple cluster - for searching, for monitoring
+
+-> in the config file, will specify to which cluster the current node should belongs to
+-> if i don't specify then a cluster will be created for that node
+
+How data is stored in elastic search
+ -> data is stored in JSON Format along with the meta data (metadata + JSON = document)
+ -> keys start with '_'
+ -> "_source" key has the actual data object
+ -> "_index" identifier, says the document belongs to which index (table)
+ -> documents are grouped together by indices
+
+document -> row in SQL
+fields -> columns in SQL
+index -> table in SQL
+
+#############################################################################################################################################################
+
+we use elastic search exposed APIs to perform operations
+
+method API/command/parameter
+
+GET _cluster/health
+
+GET _cat/nodes
+
+GET _cat/nodes?v (includes headers)
+
+GET _cat/indices?V
+
+GET _cat/indices?v&expand_wildcards=all (shows hidden indices as well)
+
+From CMD
+
+curl -X GET -k -u elastic:password https://localhost:9200/_cluster/health
+
+-k -> bypass the security check
+-u -> username and password
+
+#############################################################################################################################################################
+
+Sharding
+
+Scenario: we have 700GB of size documents having index as student, but i have two node of capacity 500GB each
+
+1. Sharding is a way to divide indices into smaller pieces
+2. Each piece is called shard
+3. Sharding is done at index level
+4. sharding improves performance by parallelization of queries
+
+Example: 900Gb = students (800GB) + teacher (100GB)
+                 400GB +   400GB + 100GB
+		   node1     node2
+
+-> whenever an index is created by default a shard (D) is created, D -> A,B (two shards)
+-> a query comes to the node and the same query will run in both the shards parallelly/simultaneously
+
+-> 1 Shard -> max can hold 2 billion documents
+-> lets say now i want to store 10 billion documents
+-> do sharding on that 1 shard, breaks into 10 shards, each can hold 2 billion documents
+
+How to do Sharding:
+-> split API
+-> shrink API
+
+#############################################################################################################################################################
+
+REPLICATION
+
+simply put copying of shards in case of disk failures (Fault Tolerance)
+
+-> When a student index is created, a shard will be created 'S' (present in NodeA)
+-> now due to some failure the data present in NodeA might get lost
+-> so we need to replication of shard 'S' -> 'R'
+-> for the same index now we have 2 shards, all these shards/replicas come under a group 'Replication Group' ('S','R')
+-> 'S' -> Primary Shard, 'R' -> Replica Shard
+-> All the replica shards should be assigned to other node (NodeB -> R1, R2)
+-> fault tolerance & parallelization
+
+Example:
+
+PUT /fruits
+GET /_cat/indices?v
+GET /_cat/shards?v -> will see 2 shards one is primary and the other one is replica (UNASSIGNED)
+GET /-cluster/health
+
+'/' at beginning is optional
+
+we can observe, health = yellow, pri = 1, rep = 1 (by default one replica shard will be there)
+why yellow -> since the replica shard is not assigned to any other node, the current node is at risk (yellow) as if something happens the data is lost
+even cluster health will become yellow (at Risk)
+
+#############################################################################################################################################################
+
+Crete two nodes in elasticsearch in a single system
+
+1. download elasticsearch and kibana
+2. extract the zip files
+3. rename elasticsearch folder to node-1
+4. create two more folders node-2 and node-3 (with same content as node-1)
+5. go to node-1 -> config -> elasticsearch.yml. uncomment the node.name = node-1
+6. do the same for other two nodes
+7. now, go to node-1 -> bin -> start elasticsearch.bat file
+8. copy the enrollment token and password, use them in kibana ui
+9. now create an index, a shard and replica will be created.
+10. the replica shard will be unassigned and the health of index, shard, cluster will be yellow (at risk)
+11. so now to configure other nodes to join this cluster
+	* on this node:
+		create an enrollment token with 'bin/elasticsearch-create-enrollment-token -s node'
+	* on the node-2:
+		open cmd in bin directory path, and execute 'elasticsearch.bat --enrollment-token <token>'
+		and start the bat file
+12. now since the cluster has two nodes, node-1 and node-2. the replica shard will be assigned to node-2
+13. and we see the green status.
+14. will not add node-3 to this cluster. because if we add then every time we start the cluster we need to make
+    sure atleast 2/3 nodes are started.
+
+#############################################################################################################################################################
+
+Node roles:
+
+MASTER Node: The master node is responsible for lightweight cluster-wide actions such as creating or deleting an index,
+tracking which nodes are part of the cluster, and deciding which shards to allocate to which nodes.
+
+how to set a node to master node:
+	node -> config -> elasticsearch.yml -> set node.master = true/false and it should not store the data -> node.data = false
+
+DATA Node: Data nodes hold the shards that contain the documents you have indexed. 
+
+to set node to a data node: node.data = true/false
+queries will be run on the data node.
+
+INGEST Node
+Coordination Node
+ml Node
+
+#############################################################################################################################################################
+
+CRUD Operations
+
+GET /_cluster/health
+GET /_cat/nodes?v
+GET /_cat/shards?v
+
+PUT student
+
+DELETE student
+
+PUT student 
+{
+    "settings": {
+        "number_of_shards": 2,
+        "number_of_replicas": 2
+    }
+}
+
+POST student/_doc 
+{
+    "name": "Rahul",
+    "age": 35
+}
+
+POST student/_doc/84787979 
+{
+    "name": "Rahul",
+    "age": 35
+}
+
+DELETE student/_doc/84787979
+
+GET student/_doc/84787979
+
+POST student/_doc
+{
+    "name": "Mohith",
+    "age": 31
+}
+
+GET student/_search
+
+GET student/_search
+{
+    "query": {
+        "match_all": {}
+    }
+}
+
+POST student/_update/Ysw7b5UB4F3Cfck5lM2P
+{
+    "doc": {
+        "age": 5,
+        "lastname": "Sharma"
+    }
+}
+
+there is not fixed schema here, one doc has 2 fields and the other one has 3 fields
+each document is independent and grouped together by index
+
+POST student/_update/Ysw7b5UB4F3Cfck5lM2P
+{
+    "script": {
+        "source": "ctx._source.age=params.new_age",
+        "params": {
+            "new_age": 5
+        }
+    }
+}
+
+POST student/_update/Ysw7b5UB4F3Cfck5lM2P
+{
+    "script": {
+        "source": """
+            if(ctx._source.age <= 0){
+                ctx.op = 'delete'
+            } else {
+                ctx._source.age--;
+            }
+            """
+    }
+}
+
+POST /student/_update/Ysw7b5UB4F3Cfck5lM2P
+{
+    "script": {
+        "source": "ctx._source.age++"
+    },
+    "upsert": {
+        "name": "Rahul",
+        "age": 35
+    }
+}
+
+PUT /student/_doc/Ysw7b5UB4F3Cfck5lM2P
+{
+    "name": "Ram"
+}
+
+get student/_search
+
+#############################################################################################################################################################
+
+ROUTING
+
+-> On which shard does the ES store document
+-> How does ES search for a document
+
+The process of resolving a shard for a document
+
+1. when inserting a new doc, shard_num = has(_routing) % num_primary_shards
+2. default routing = hash(_id) % 2 -> this will match with any of the two primary shards and doc will be inserted in that shard
+3. when searching: GET /student/_doc/_id -> the same formula will be used to identify the shard and ES search only in that shard
+
+Problem: what if at the time of insertion of doc there were 3 primary shards and the doc got inserted in primary shard 3, then if the shards were increased to 4, then during search of the same doc that shard_num generated might be diff
+
+Solution: in ELS you cannot increase the shard number once the document is inserted in index
+
+#############################################################################################################################################################
+
+How Elasticsearch Read Data:
+
+GET /student/_doc/100 -> Coordination Node (Load Balancer) -> Data Node -> Routing -> Replication Group (P, R) -> ARS (Adaptive Replica Selection) -> R -> final document -> coordination node -> client
+
+ARS -> selects the replica where the search is more optimized/free and not down
+
+How Elasticsearch Write Data:
+
+PUT student/_doc/100 (request) -> Coordination node -> Data Node -> Routing -> Replication group (PS, R)
+
+-> request comes to replication group
+1. The doc need to be stored in PS
+2. Validate the request and doc
+3. save to PS
+4. Then save in all replica
+
+#############################################################################################################################################################
+
+
+What is Primary term and Sequence number:
+
+primary term: how many times PS has changed (counter)
+sequence number: counter for each write operation (PS will increment this counter)
+
+With the help of these we can achieve consistency, and synchronization
+
+Global Check point: a min sequence number of Replication group
+Local Check point: a sequence number for a particular shard
+
+#############################################################################################################################################################
+
+Optimistic Concurrency Control in Elasticsearch
+
+Scenario: assume that in elastic search we store pen details and its stock (10)
+
+1. A read the stock from els -> 10
+2. B read the stock from els -> 10
+3. A bought the stock -> 10-1 = 9
+4. B bought the stock -> 10-1 = 9
+
+Problem: Inconsistency
+
+solution: use primary term, sequence number to achieve consistency
+
+#############################################################################################################################################################
+
+
+update_by_query and delete_by_query
+
+create a customer index
+insert two customer documents
+we can update particular customer age
+if we want to update all customers age (bulk api)
+
+POST customers/_update_by_query
+{
+	"query": {
+	  "match_all": {}
+	},
+	"script": {
+	  "source": "ctx._source.age++"
+	}
+}
+
+POST customers/_delete_by_query
+{
+	"query": {
+	  "match_all": {}
+	}
+}
+
+#############################################################################################################################################################
+
+
+BULK API
+
+1. Bulk API is a feature that allows you to index or update multiple documents in a single API call.
+2. It is designed to be more efficient when dealing with large volumes of data, as it reduces the overhead of making individual requests for each document.
+3. You provide a sequence of action and data pairs in a single HTTP request, and Elasticsearch processes them in a batch.
+4. The action can be index, create, update, or delete, and the data contains the actual document to be indexed or updated.
+PUT customers
+
+POST customers/_doc
+{
+    "name": "Ram",
+    "age": 20
+}
+
+POST customers/_doc
+{
+    "name": "Akshit",
+    "age": 25
+}
+
+# index, create, update, delete
+POST customers/_bulk
+{
+  "index": {}
+}
+{
+  "name": "Syam",
+  "age": 30
+}
+{
+  "create": {}
+}
+{
+  "name": "Ajay",
+  "age": 35
+}
+{
+  "update": {
+    "_id": "tmxBdJUBFabZ26U5IKCG"
+  }
+}
+{
+  "doc": {
+    "age": 21
+  }
+}
+{
+  "delete": {
+    "_id": "t2xBdJUBFabZ26U5L6Au"
+  }
+}
+
+
+
+GET customers/_search
+
+Advantages:
+
+1. Reduced network overhead: By sending multiple actions in a single request, you save o the overhead of establishing separate connections for each individual action, which can be particularly beneficial when dealing with a large number of documents.
+2. The bulk API allows Elasticsearch to optimize the indexing process by performing it in batches, which can significantly improve the indexing speed when compared to individual requests.
+
+#############################################################################################################################################################
+
+analyser in elastic search ( _analyze API )
+
+1. Analysis refers to the process of converting text into terms that can be efficiently stored and searched.
+2. Elasticsearch uses a powerful text analysis engine to break down textual data into individual tokens or terms, which are then used to build an inverted index (data structure) for fast and accurate full-text search.
+
+
+doc -> Analyzer -> store
+
+Analyzer has:
+1. Character Filters: character filters are used to process the input text before tokenization. They can perform tasks like removing HTML tags, replacing specific characters, etc.
+2. Tokenization: Standard Tokenizer (splits the text into words based on whitespaces and punctuation.
+3. Token Filtering: Lowercase Token Filter (coverts all token to lowercase)
+
+Example:
+
+By default Character filter is not used
+
+"Hello World !"
+
+Tokenization: "Hello", "World"
+Token Filtering: "hello", "world"
+
+We can make our own custom analyser for any specific use case
+
+
+POST _analyze
+{
+  "text": "Hello,How are you ? What's up ? This is so high-end"
+}
+
+POST _analyze
+{
+  "text": "Hello,How are you ? What's up ? This is so high-end",
+  "analyzer":  "standard"
+}
+
+POST _analyze
+{
+  "text": "Hello,How are you ? What's up ? This is so high-end",
+  "char_filter": [],
+  "tokenizer": "standard",
+  "filter": ["lowercase"]
+}
+
+
+output: 
+
+{
+  "tokens": [
+    {
+      "token": "hello",
+      "start_offset": 0,
+      "end_offset": 5,
+      "type": "<ALPHANUM>",
+      "position": 0
+    },
+    {
+      "token": "how",
+      "start_offset": 6,
+      "end_offset": 9,
+      "type": "<ALPHANUM>",
+      "position": 1
+    },
+    {
+      "token": "are",
+      "start_offset": 10,
+      "end_offset": 13,
+      "type": "<ALPHANUM>",
+      "position": 2
+    },
+    {
+      "token": "you",
+      "start_offset": 14,
+      "end_offset": 17,
+      "type": "<ALPHANUM>",
+      "position": 3
+    },
+    {
+      "token": "what's",
+      "start_offset": 20,
+      "end_offset": 26,
+      "type": "<ALPHANUM>",
+      "position": 4
+    },
+    {
+      "token": "up",
+      "start_offset": 27,
+      "end_offset": 29,
+      "type": "<ALPHANUM>",
+      "position": 5
+    },
+    {
+      "token": "this",
+      "start_offset": 32,
+      "end_offset": 36,
+      "type": "<ALPHANUM>",
+      "position": 6
+    },
+    {
+      "token": "is",
+      "start_offset": 37,
+      "end_offset": 39,
+      "type": "<ALPHANUM>",
+      "position": 7
+    },
+    {
+      "token": "so",
+      "start_offset": 40,
+      "end_offset": 42,
+      "type": "<ALPHANUM>",
+      "position": 8
+    },
+    {
+      "token": "high",
+      "start_offset": 43,
+      "end_offset": 47,
+      "type": "<ALPHANUM>",
+      "position": 9
+    },
+    {
+      "token": "end",
+      "start_offset": 48,
+      "end_offset": 51,
+      "type": "<ALPHANUM>",
+      "position": 10
+    }
+  ]
+}
+
+there were many predefined filters already available
+
+#############################################################################################################################################################
+
+
+Inverted Index for High-Performance Searches
+
+1. An Inverted Index is a fundamental data structure used to efficiently store and retrieve information from a large collection of documents. It is the backbone of Elasticsearch's powerful and fast full-text search capabilities.
+2. The inverted index is designed to solve the problem of quickly finding all documents that contain a specific term or word in a vast collection of documents.
+3. Instead of scanning through each document one by one, which can be time-consuming for large datasets, the inverted index allows Elasticsearch to perform searches much more efficiently.
+4. For each token, the inverted index maintains a list of document IDs where the token appears. It creates a mapping between each token and corresponding documents that contain that token.
+
+Example:
+Doc1: "The quick brown fox"
+Doc2: "Jumped over the lazy dog"
+Doc3: "The fox and the dog"
+
+
+and -> 3
+brown -> 1
+dog -> 2 3
+fox -> 1 3
+....
+
+5. Now, When you search for a term like "fox", Elasticsearch can quickly look up the term in the inverted index (does hashing) and retrieve the document IDs [1,3], which correspond to the documents containing the term "fox".
+6. By leveraging the inverted index, Elasticsearch dramatically reduces the time and resources required to perform complex searches over large sets of documents, making it a powerful tool for building search applications and systems.
+
+Example:
+
+Doc1: "The quick brown fox jumps over the lazy dog."
+Doc2: "A brown dog barks loudly."
+
+1. The search engine looks up "brown" in the inverted index and finds Doc1 and Doc2 associated with it.
+2. The search engine looks up "dog" in the inverted index and finds Doc1 and Doc2 associated with it
+3. It performs the intersection of the document lists for "brown" and "dog", resulting in a list containing Doc1 and Doc2
+4. The search results are then presented to you, showing both documents as they contain both "brown" and "dog".
+
+7.It also stores the frequency of words, for priority processing.
+
+#############################################################################################################################################################
+
+doc_values work in Elasticsearch
+
+
+1. Numeric field are stored in a different way compared to text fields in Elasticsearch.
+2. Instead of using the inverted index, Elasticsearch uses a data structure called "Doc Values" for numeric fields. This approach allows for efficient numerical range queries and aggregations, sorting.
+
+Doc Values: Doc Values are columnar data structures that store the values of each field for each document in a highly compressed and optimized format. Doc Values are used for numeric fields, as well as some other field types like date fields.
+
+Example:
+
+{
+  "name": "Akshit",
+  "age": 23,
+  "height": 5.7,
+  "hobbies": ["singing", "dancing"],
+  "id": [
+    { "name": "aadhar", "value": 123 },
+    { "name": "pan", "value": 4533 }
+  ],
+  "address":{
+    "city": "rampur",
+    "state": "UP"
+  },
+  "email": "debedy@medie.com"
+}
+
+Field Name   Data Structure     Data Type      Storage Type
+name	     Inverted Index     Text           Text-based
+age          Doc Values         Integer        Numeric
+height       Doc Values         Float          Numeric
+hobbies      Inverted Index     Text Array     Text-based
+id           Nested Field       Object Array   Structured data
+- name       Inverted Index     Text           Text-based
+- value      Doc Values         Text           Text-based
+address      Nested Field       Object         Structured Data
+- city       Inverted Index     Text           Text-based
+- state      Inverted Index     Text           Text-based
+email        Doc values         keyword        Text-based
+
+
+now we introduced an email field
+Email is set to keyword -> means save the data as it
+then the email field is not stored in inverted index
+it is stored in Doc Values, so that we can do exact matching
+
+when we index a document with two text fields, two inverted indexes are created one for each text field.
+
+#############################################################################################################################################################
+
+Mapping
+
+1. Defines how documents and their fields are stored and indexed.
+2. It essentially describes the data structure of your documents, including data types of fields, how they should be analyzed
+3. While dynamic mapping can be helpful for quickly getting started with Elasticsearch and handling unknown fields, explicit mapping is essential for data control, consistency, and optimizing the search performance. It allows us to define the schema that best fits your data and ensures that Elasticsearch behaves as expected, even as your data evolves over time.
+
+-> Preventing Type conflicts
+-> Elasticsearch doesn't need to spend resources analyzing and guessing the data types of every new field
+-> Explicit mappings allow you to define validation rules and ensure data integrity during indexing.
+
+
+Dynamic Mapping:
+
+PUT student/_doc/1
+{
+  "name": "Ajay",
+  "age": 20
+}
+
+GET student/_mapping
+
+{
+  "student": {
+    "mappings": {
+      "properties": {
+        "age": {
+          "type": "long"
+        },
+        "name": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+The name field is stored in inverted index and in Doc Values
+
+Explicit Mapping:
+
+PUT student
+{
+  "mappings": {
+    "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer"
+      }
+    }
+  }
+}
+
+PUT student/_doc/1
+{
+  "name": "Ajay",
+  "age": 20
+}
+
+GET student/_mapping
+
+{
+  "student": {
+    "mappings": {
+      "properties": {
+        "age": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "text"
+        }
+      }
+    }
+  }
+}
+
+Problem: If we try to add any new field like address, then dynamic mapping will be done to that new field
+
+PUT student/_doc/2
+{
+  "name": "Piysuh",
+  "age": 30,
+  "address": "some address"
+}
+
+{
+  "student": {
+    "mappings": {
+      "properties": {
+        "address": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "age": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "text"
+        }
+      }
+    }
+  }
+}
+
+Solution:
+
+at root level introduce "dynamic": false,
+we can also introduce at field level
+either or
+
+If you try to index a document with a new field that doesn't exist in the mapping, Elasticsearch will not reject the document entirely. Instead, it will silently ignore the new fields and only index the fields that are explicitly defined in the mapping. No error will be thrown.
+
+PUT student
+{
+  "mappings": {
+    "dynamic": false,
+    "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer"
+      }
+    }
+  }
+}
+
+PUT student/_doc/2
+{
+  "name": "Piysuh",
+  "age": 30,
+  "address": "some address"
+}
+
+the document can still be inserted but the address field will not be stored anywhere, so search operations cannot be performed on address field
+
+
+"dynamic": "strict" ( does not allow a doc with new fields )
+
+PUT student
+{
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer"
+      }
+    }
+  }
+}
+
+PUT student/_doc/2
+{
+  "name": "Piysuh",
+  "age": 30,
+  "address": "some address"
+}
+
+{
+  "error": {
+    "root_cause": [
+      {
+        "type": "strict_dynamic_mapping_exception",
+        "reason": "[1:46] mapping set to strict, dynamic introduction of [address] within [_doc] is not allowed"
+      }
+    ],
+    "type": "strict_dynamic_mapping_exception",
+    "reason": "[1:46] mapping set to strict, dynamic introduction of [address] within [_doc] is not allowed"
+  },
+  "status": 400
+}
+
+#############################################################################################################################################################
+
+Mapping API:
+
+1. Get index mapping
+2. Get field's mapping
+3. update mapping
+4. add a new field
+
+GET student/_mapping
+
+GET student/_mapping/field/age
+
+PUT student/_mapping
+{
+  "properties": {
+    "address": {
+      "type": "text"
+    }
+  }
+}
+
+update mapping: If you want to update the mapping of a field then you have to create a new index and copy all the documents.
+
+Note: updating mapping of existing fields is not allowed
+
+#############################################################################################################################################################
+
+_reindex API
+
+POST students/_doc/1
+{
+  "name": "Ram",
+  "age": 5
+}
+
+POST students/_doc/2
+{
+  "name": "Shyam",
+  "age": 6
+}
+
+GET students/_search
+
+GET students/_mapping
+
+# After 10 years, 10 crore
+
+PUT student_new
+{
+  "mappings": {
+    "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer"
+      }
+    }
+  }
+}
+
+GET student_new/_mapping
+
+POST _reindex
+{
+  "source": {
+    "index": "students",
+    "query": {
+      "match_all": {}
+    }
+  },
+  "dest": {
+    "index": "student_new"
+  },
+  "script": {
+    "source": "ctx._source.id = ctx._source.name + ctx._source.age"
+  }
+}
+
+GET student_new/_search
+
+
+#############################################################################################################################################################
+
+Coercion:
+
+The process of automatically converting data from one type to another during indexing or searching when the data type in the mapping does not match the data provided. Elasticsearch performs coercion to accommodate data that might not precisely match the expected data types defined in the mapping.
+
+PUT students
+{
+  "settings": {
+    "index.mapping.coerce": false
+  },
+  "mappings": {
+    "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer",
+        "coerce": false
+      }
+    }
+  }
+}
+
+#############################################################################################################################################################
+
+Data types:
+
+Text -> A data type for full-text search and analysis of text data (inverted index)
+{
+ "type": "text"
+}
+
+Keyword -> A data type for exact matching and filtering of keyword-like data, such as Ids, tags, or categories. (Doc Values)
+{
+ "type": "keyword"
+}
+
+Date -> A data type for representing dates, stored as a long value representing milliseconds since epoch
+{
+ "type": "date"
+}
+
+Integer -> A data type for storing 32-bit signed integers
+{
+ "type": "integer"
+}
+
+Long -> A data type for storing 64-bit signed integers
+{
+ "type": "long"
+}
+
+Float -> A data type for storing single-precision 32-bit floating point numbers
+{
+ "type": "float"
+}
+
+Double -> A data type for storing single-precision 64-bit floating point numbers
+{
+ "type": "double"
+}
+
+Boolean -> true or false
+{
+ "type": "boolean"
+}
+
+Object -> A complex data type for representing structured objects with nested fields
+{
+  "type": "object"
+  "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer",
+      }
+    }
+}
+
+Nested -> A data type for handling arrays of complex objects, where each object is treated as an independent document
+{
+  "type": "nested"
+  "properties": {
+      "name": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer",
+      }
+    }
+}
+
+PUT employees
+{
+  "mappings": {
+    "properties": {
+      "name": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "text"
+          },
+          "last_name": {
+            "type": "text"
+          }
+        }
+      },
+      "experience": {
+        "type": "nested",
+        "properties": {
+          "company_name": {
+            "type": "text"
+          },
+          "duration_in_months": {
+            "type": "integer"
+          }
+        }
+      },
+      "dob": {
+        "type": "date"
+      },
+      "current_salary": {
+        "type": "long"
+      },
+      "email": {
+        "type": "keyword"
+      },
+      "on_notice_period": {
+        "type": "boolean"
+      }
+    }
+  }
+}
+
+PUT employees/_doc/1
+{
+  "name": {
+    "first_name": "Akshit",
+    "last_name": "Sharma"
+  },
+  "on_notice_period": true,
+  "current_salary": 1000000,
+  "dob": "1995-01-01",
+  "experience": [
+    {
+      "company_name": "ABC Corp",
+      "duration_in_months": 24
+    },
+    {
+      "company_name": "XYZ Zinc",
+      "duration_in_months": 12
+    }
+  ]
+}
+
+GET employees/_mapping
+
+GET employees/_search
+
+
+#############################################################################################################################################################
+
+Index Templates
+
+An index template in Elasticsearch is a way to define a set of configurations and mappings that will be automatically applied to new indices that match a specific pattern. Index templates are useful for automating the process of setting up and configuring indices in Elasticsearch, especially when you have a consistent naming convention for your indices or want to apply common settings to multiple indices.
+
+PUT _index_template/students_template
+{
+  "index_patterns": ["students_class_*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 2,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "name": {
+          "type": "text"
+        },
+        "id": {
+          "type": "keyword"
+        },
+        "dob": {
+          "type": "date"
+        }
+      }
+    }
+  }
+}
+
+GET _index_template/students_template
+
+DELETE _index_template/students_template
+
+PUT students_class_1/_doc/1
+{
+  "name": "Ram",
+  "id": "A12P",
+  "dob": "2000-01-01"
+}
+
+
+1. When a new index is created that matches the pattern defined in an index template, Elasticsearch applies the template's settings, mappings, and other configurations to the new index, ensuring consistency across your data.
+
+#############################################################################################################################################################
+
+Elasticsearch Common Schema (ECS): Enhancing Elasticsearch with Common Schema
+
+1. Elastic Common Schema (ECS) is a standardized data schema designed to provide a common set of field names and data types for logs and metrics in the Elastic Stack, which includes Elasticsearch, Kibana, Logstash, Beats and other related components.
+2. ECS was introduced by Elastic (the company behind the Elastic Stack) to promote interoperability, consistency, and ease of data analysis across different data sources and applications.
+
+#############################################################################################################################################################
+
+Aliases:
+
+1. In Elasticsearch, an alias is an additional name or label assigned to one or more indexes. It acts as a pointer to the underlying indexes, allowing users to interact with them using a more user friendly name. 
+2. Aliases are dynamic and can be added, removed, or changed at any time without reindexing the data.
+
+Use cases:
+
+Abstraction and Decoupling:
+
+Aliases provide an abstraction layer, separating the physical index names from the logical names used in applications. this decoupling is beneficial when you want to change or reorganize your index structure without affecting your applications.
+
+Blue-Green Deployments
+
+During the deployment of a new version of an index, aliases can be used to perform blue-green deployment. By switching the alias from the old index to the new one, you can ensure zero downtime and smooth transition.
+
+Filtered Queries
+
+Aliases enable the use of filtered queries. You can define an alias with a specific filter, and all queries routed through that alias will be automatically filtered accordingly.
+
+Cross-Cluster search
+
+Aliases can also be used to perform cross-cluster search, allowing you to run queries across multiple clusters as if they were a single entity.
+
+-> alias pointing on students
+
+PUT students/_doc/1
+{
+  "name": "Ram",
+  "age": 10
+}
+
+POST _aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "students",
+        "alias": "students_alias"
+      }
+    }
+  ]
+}
+
+GET students_alias/_search
+
+-> removing alias
+
+POST _aliases
+{
+  "actions": [
+    {
+      "remove": {
+        "index": "students",
+        "alias": "students_alias"
+      }
+    }
+  ]
+}
+
+-> alias pointing to both student and teachers
+
+POST _aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "teachers",
+        "alias": "school"
+      }
+    }
+  ]
+}
+
+POST _aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "students",
+        "alias": "school"
+      }
+    }
+  ]
+}
+
+ouput:
+
+"hits": [
+      {
+        "_index": "students",
+        "_id": "1",
+        "_score": 1,
+        "_source": {
+          "name": "Ram",
+          "age": 10
+        }
+      },
+      {
+        "_index": "teachers",
+        "_id": "1",
+        "_score": 1,
+        "_source": {
+          "name": "Gita",
+          "age": 30
+        }
+      }
+    ]
+
+-> lets say now we want to remove students from alias
+
+
+POST _aliases
+{
+  "actions": [
+    {
+      "remove": {
+        "index": "students",
+        "alias": "school"
+      }
+    }
+  ]
+}
+
+-> also supports wildcards
+
+PUT students_class_1/_doc/1
+{
+  "name": "Ram",
+  "age": 10
+}
+
+PUT students_class_2/_doc/1
+{
+  "name": "Shyam",
+  "age": 11
+}
+
+POST _aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "students_*",
+        "alias": "students"
+      }
+    }
+  ]
+}
+
+GET students/_search
+
+output:
+
+"hits": [
+      {
+        "_index": "students_class_1",
+        "_id": "1",
+        "_score": 1,
+        "_source": {
+          "name": "Ram",
+          "age": 10
+        }
+      },
+      {
+        "_index": "students_class_2",
+        "_id": "1",
+        "_score": 1,
+        "_source": {
+          "name": "Shyam",
+          "age": 11
+        }
+      }
+    ]
+
+-> we can also provide filters in alias
+
+Note: When alias is pointing to one index, then we are allowed to index an doc using alias.
+But when alias is pointing to multiple index, then we are not allowed to index an doc using alias unless explicitly mentioned
+
+POST _aliases
+{
+  "actions": [
+    {
+      "add": {
+        "index": "students_class_1",
+        "alias": "students",
+        "is_write_index": true
+      }
+    }
+  ]
+}
+
+now the doc is inserted only in student_class_1 index, not in student_class_2
+
+#############################################################################################################################################################
+
+Elasticsearch Query Types
+
+1. One of the core functionalities of Elasticsearch is the ability to perform searches on indexed data using the _search endpoint
+2. The _search endpoint allows you to execute complex queries against your data and retrieve relevant results efficiently.
+3. Elasticsearch provides a flexible and expressive query language called Query DSL (Domain specific language) that allows you to construct various types of queries. These queries can range from simple term matches to complex nested queries involving aggregations, filters, and more.
+
+GET /index_name/_search
+{
+  "query": {
+    // your query goes here
+  },
+  // Additional parameters and options can be included here
+}
+
+Some of the common query types
+
+Match Query: This query is used to perform full-text search on a field. It matches documents that contain a specific term. (relevant data, not exact match)
+Disjunction Max Query: Combines multiple queries and returns documents that match any of the queries with the highest score.
+Multi-Match Query: A versatile query that allows you to run the same query across multiple fields and combines the results.
+IDs Query: The Ids query allows you to specify an array of documents IDs to match. It retrieves documents that have Ids that match any of the provided IDs
+Term Query: This query is used to find documents that contains a specific exact term in a particular field.
+Range Query: It matches documents where the field value falls within a specified range of values.
+Bool Query: A Boolean query that allows you to combine multiple queries using Boolean operators (must, should, must_not, filter) to create complex queries.
+Exists Query: This query matches documents where the specified field exists. Note that the field's value should have been indexed.
+Wildcard Query: This query supports wildcard patterns to match documents based on a pattern
+Prefix Query: It matches documents that have fields containing terms with a specified prefix.
+Nested Query: Used to query nested objects withing documents.
+
+
+Match Query:
+
+Elasticsearch uses analyzers to process and tokenize text before indexing. By default, the Match Query uses the analyzer associated with the field you're searching on. This can lead to better results, especially with languages that have stemming and other linguistic variations.
+
+Here we are not just finding out text, we also consider how well it matches out our text (relevance).
+
+Relevance score: Measures how well each document matches a query.
+gives the results in sorted order, the doc with high relevance score us at the top.
+
+by default the operation is 'or'
+
+
+keyword type:
+
+when the field type is keyword, then analyzer wont tokenize, lowercase. It stores the field as it is.
+
+Example: Cricket
+
+when you run a query match for the field bio with term as Cricket, the documents which have Cricket in bio will be returned, but the documents with cricket as bio wont be considered. since they differ in case.
+
+when you try to do the same in bio which is of text type, will return all document that has Cricket/cricket etc
+
+Disjunction Max Query:
+
+It is useful for situations where you have multiple query clauses representing different aspects of a search, and you want to ensure that documents any of these clauses are returned.
+
+
+
+
+
+
+
+
+
+
+
+
