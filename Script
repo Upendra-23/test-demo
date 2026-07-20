@@ -1,0 +1,76 @@
+import org.apache.commons.io.IOUtils
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import com.fasterxml.jackson.databind.ObjectMapper
+
+import java.nio.charset.StandardCharsets
+import java.io.*
+
+flowFile = session.get()
+if(flowFile == null) return
+
+def mapper = new ObjectMapper()
+
+flowFile = session.write(flowFile, { inputStream, outputStream ->
+
+    String text = IOUtils.toString(inputStream, StandardCharsets.UTF_8)
+
+    def json = new JsonSlurper().parseText(text)
+
+    def value = null
+
+    switch(json.VAR_TYPE_) {
+
+        case "string":
+            value = json.TEXT_
+            break
+
+        case "integer":
+        case "long":
+        case "boolean":
+            value = json.LONG_
+            break
+
+        case "double":
+            value = json.DOUBLE_
+            break
+
+        case "serializable":
+
+            if(json.BYTES_ != null){
+
+                byte[] bytes = new byte[json.BYTES_.size()]
+
+                for(int i=0;i<json.BYTES_.size();i++){
+                    bytes[i] = (byte)((int)json.BYTES_[i])
+                }
+
+                ObjectInputStream ois =
+                        new ObjectInputStream(
+                                new ByteArrayInputStream(bytes))
+
+                Object obj = ois.readObject()
+
+                value = mapper.writeValueAsString(obj)
+
+                ois.close()
+            }
+
+            break
+    }
+
+    def output = [
+            PROCESS_ID     : json.PROCESS_ID,
+            VARIABLE_NAME  : json.VARIABLE_NAME,
+            VARIABLE_VALUE : value,
+            CREATED_AT     : json.CREATE_TIME_
+    ]
+
+    outputStream.write(
+            JsonOutput.toJson(output)
+                      .getBytes(StandardCharsets.UTF_8)
+    )
+
+} as StreamCallback)
+
+session.transfer(flowFile, REL_SUCCESS)
